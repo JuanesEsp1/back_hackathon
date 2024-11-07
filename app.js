@@ -9,7 +9,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cors());
 
-// ENDPOINTS USUARIOS
+// ############## ENDPOINTS USUARIOS ##############
 app.get("/usuarios", async (req, res) => {
   try {
     const result = "SELECT * FROM users";
@@ -66,7 +66,8 @@ app.delete("/usuarios/:id", async (req, res) => {
   }
 });
 
-// ENDPOINTS PQR
+// ############## ENDPOINTS PQR ##############
+
 app.get("/pqr", async (req, res) => {
   try {
     const result = "SELECT * FROM PQR";
