@@ -3,6 +3,7 @@ const app = express()
 const cors = require('cors')
 const port = 3001
 const connection = require('./controller/db.js')
+const facturaController = require('./controller/facturaController.js')
 
 
 app.get('/usuarios', async (req, res) => {
@@ -18,6 +19,7 @@ app.get('/usuarios', async (req, res) => {
     }
 });
 
+app.post('/factura', facturaController.generarFactura)
 
 
 
