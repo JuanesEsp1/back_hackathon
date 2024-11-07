@@ -1,16 +1,30 @@
+CREATE TABLE users (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL,
+    contact VARCHAR(255) NOT NULL,
+    address VARCHAR(255) NOT NULL,
+    rol VARCHAR(255) NOT NULL,
+    password VARCHAR(255) NOT NULL
+);
+
+
 CREATE TABLE PQR (
     id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT NOT NULL,
+    support_id INT NOT NULL,
     type VARCHAR(255) NOT NULL,
     description VARCHAR(255) NOT NULL,
     support_document VARCHAR(255),
-    status VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    support_response VARCHAR(255),
+    status VARCHAR(255) NOT NULL
 );
 
 CREATE TABLE support_chats (
     id INT PRIMARY KEY AUTO_INCREMENT,
     user_id INT NOT NULL,
     agent_id INT,
+    message TEXT NOT NULL,
     status ENUM('open', 'closed', 'converted_to_ticket') NOT NULL DEFAULT 'open',
     ticket_id INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
