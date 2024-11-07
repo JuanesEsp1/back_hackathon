@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Chat de Soporte - Agente</title>
+    <style>
+        /* ... (mantener los estilos base anteriores) ... */
+
+        .chat-list {
+            width: 300px;
+            border-right: 1px solid #eee;
+            padding: 15px;
+        }
+
+        .chat-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+
+        .chat-item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .chat-item.active {
+            background-color: #e9ecef;
+        }
+
+        .main-container {
+            display: flex;
+            max-width: 1200px;
+            margin: 20px auto;
+            background-color: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .chat-area {
+            flex-grow: 1;
+            padding: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="main-container">
+        <div class="chat-list" id="chatList">
+            <h3>Chats Activos</h3>
+            <!-- Lista de chats se llenará dinámicamente -->
+        </div>
+
+        <div class="chat-area">
+            <div class="header">
+                <h2>Chat de Soporte - Agente</h2>
+                <div>
+                    <input type="text" id="supportId" placeholder="ID del agente">
+                    <button onclick="iniciarSesion()">Iniciar Sesión</button>
+                    <button onclick="mostrarChatsActivos()">Mostrar chats activos</button>
+                    <button onclick="nuevoChat()">Nuevo Chat</button>
+                    <button onclick="cerrarChat()">Cerrar Chat</button>
+                </div>
+            </div>
+            <div class="messages" id="mensajes"></div>
+            <div class="message-input">
+                <input type="text" id="mensaje" placeholder="Escribe un mensaje..." disabled>
+                <button onclick="enviarMensaje()" id="btnEnviar" disabled>Enviar</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let supportId = null;
+        let chatActualId = null;
+        let intervalId = null;
+        let mensajesIntervalId = null;
+        const INTERVALO_ACTUALIZACION = 3000;
+
+        async function nuevoChat() {
+            if (mensajesIntervalId) {
+                clearInterval(mensajesIntervalId);
+                mensajesIntervalId = null;
+            }
+
+            chatActualId = null;
+            document.getElementById('mensaje').disabled = false;
+            document.getElementById('btnEnviar').disabled = false;
+            document.getElementById('mensajes').innerHTML = '';
+        }
+
+        // Actualizar onbeforeunload para limpiar ambos intervalos
+        window.onbeforeunload = () => {
+            if (intervalId) clearInterval(intervalId);
+            if (mensajesIntervalId) clearInterval(mensajesIntervalId);
+        };
+
+        async function cerrarChat() {
+            if (!chatActualId) return;
+            try {
+                await fetch(`http://localhost:3001/chat/close/${chatActualId}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+
+                });
+                // Limpiar intervalo de mensajes
+                if (mensajesIntervalId) {
+                    clearInterval(mensajesIntervalId);
+                    mensajesIntervalId = null;
+                }
+                chatActualId = null;
+                document.getElementById('mensaje').disabled = true;
+                document.getElementById('btnEnviar').disabled = true;
+            } catch (error) {
+                console.error('Error al cerrar chat:', error);
+            }
+        }
+
+        async function iniciarSesion() {
+            supportId = document.getElementById('supportId').value;
+            if (!supportId) {
+                alert('Por favor ingresa tu ID de agente');
+                return;
+            }
+
+            document.getElementById('supportId').disabled = true;
+            cargarChatsActivos();
+
+            intervalId = setInterval(cargarChatsActivos, INTERVALO_ACTUALIZACION);
+        }
+
+        async function mostrarChatsActivos() {
+            try {
+                const response = await fetch(`http://localhost:3001/chats`);
+                const chats = await response.json();
+                console.log(chats);
+                mostrarListaChats(chats);
+            } catch (error) {
+                console.error('Error al cargar chats:', error);
+            }
+        }
+
+        async function cargarChatsActivos() {
+            try {
+                const response = await fetch(`http://localhost:3001/chat/support/${supportId}`);
+                const chats = await response.json();
+                mostrarListaChats(chats);
+            } catch (error) {
+                console.error('Error al cargar chats:', error);
+            }
+        }
+
+        function mostrarListaChats(chats) {
+            const chatList = document.getElementById('chatList');
+            const currentContent = chatList.innerHTML;
+            let newContent = '<h3>Chats Activos</h3>';
+
+            chats.forEach(chat => {
+                newContent += `
+                    <div class="chat-item ${chat.id === chatActualId ? 'active' : ''}" 
+                         onclick="seleccionarChat(${chat.id})">
+                        <div>Usuario: ${chat.user_name}</div>
+                        <small>Chat #${chat.id}</small>
+                    </div>
+                `;
+            });
+
+            if (currentContent !== newContent) {
+                chatList.innerHTML = newContent;
+            }
+        }
+
+        async function seleccionarChat(chatId) {
+            // Limpiar intervalo anterior si existe
+            if (mensajesIntervalId) {
+                clearInterval(mensajesIntervalId);
+            }
+
+            chatActualId = chatId;
+            document.getElementById('mensaje').disabled = false;
+            document.getElementById('btnEnviar').disabled = false;
+
+            // Cargar mensajes inmediatamente
+            await cargarMensajesChat();
+
+            // Configurar actualización automática de mensajes
+            mensajesIntervalId = setInterval(cargarMensajesChat, INTERVALO_ACTUALIZACION);
+
+        }
+
+        async function cargarMensajesChat() {
+            if (!chatActualId) return;
+
+            try {
+                const response = await fetch(`http://localhost:3001/chat/${chatActualId}/messages`);
+                const mensajes = await response.json();
+                mostrarHistorial(mensajes);
+            } catch (error) {
+                console.error('Error al cargar mensajes:', error);
+            }
+        }
+
+        async function enviarMensaje() {
+            const mensajeInput = document.getElementById('mensaje');
+            const mensaje = mensajeInput.value.trim();
+
+            if (!mensaje || !chatActualId) return;
+
+            try {
+                await fetch(`http://localhost:3001/chat/${chatActualId}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sender_id: supportId,
+                        message: mensaje
+                    })
+                });
+
+                mensajeInput.value = '';
+                cargarMensajesChat();
+            } catch (error) {
+                console.error('Error al enviar mensaje:', error);
+                alert('Error al enviar el mensaje');
+            }
+        }
+
+        function mostrarHistorial(mensajes) {
+            const mensajesDiv = document.getElementById('mensajes');
+            mensajesDiv.innerHTML = '';
+            mensajes.forEach(mostrarMensaje);
+        }
+
+        function mostrarMensaje(mensaje) {
+            const mensajesDiv = document.getElementById('mensajes');
+            const esPropio = mensaje.sender_id.toString() === supportId;
+
+            const div = document.createElement('div');
+            div.className = `message ${esPropio ? 'sent' : 'received'}`;
+            div.innerHTML = `
+                <div>${mensaje.message}</div>
+                <div class="timestamp">
+                    ${mensaje.sender_name || 'Usuario'} - ${new Date(mensaje.created_at).toLocaleTimeString()}
+                </div>
+            `;
+
+            mensajesDiv.appendChild(div);
+            mensajesDiv.scrollTop = mensajesDiv.scrollHeight;
+        }
+
+        // Evento para enviar con Enter
+        document.getElementById('mensaje').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') enviarMensaje();
+        });
+
+        // Limpiar intervalo al cerrar la página
+        window.onbeforeunload = () => {
+            if (intervalId) clearInterval(intervalId);
+        };
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat de Soporte - Cliente</title>
+    <style>
+        /* ... (mantener los mismos estilos anteriores) ... */
+        
+        /* Agregar estilos adicionales */
+        .user-info {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #e9ecef;
+            border-radius: 8px;
+        }
+
+        .refresh-button {
+            background-color: #28a745;
+            margin-left: 10px;
+        }
+
+        .error-message {
+            color: #dc3545;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="header">
+            <h2>Chat de Soporte - Cliente</h2>
+            <div class="user-info" id="userInfo">
+                <input type="text" id="userId" placeholder="Tu ID de usuario">
+                <button onclick="iniciarChat()">Iniciar Chat</button>
+                <button onclick="actualizarMensajes()" class="refresh-button">↻</button>
+                <button onclick="nuevoChat()" class="new-chat-button">Nuevo Chat</button>
+
+            </div>
+        </div>
+        <div class="messages" id="mensajes"></div>
+        <div class="message-input">
+            <input type="text" id="mensaje" placeholder="Escribe un mensaje..." disabled>
+            <button onclick="enviarMensaje()" id="btnEnviar" disabled>Enviar</button>
+        </div>
+    </div>
+
+    <script>
+        let chatId = null;
+        let userId = null;
+        const INTERVALO_ACTUALIZACION = 3000; // 3 segundos
+        let intervalId = null;
+
+        async function iniciarChat() {
+            userId = document.getElementById('userId').value;
+            if (!userId) {
+                alert('Por favor ingresa un ID de usuario');
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:3001/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: userId })
+                });
+                
+                const data = await response.json();
+                chatId = data.insertId;
+                
+                // Habilitar interfaz
+                document.getElementById('mensaje').disabled = false;
+                document.getElementById('btnEnviar').disabled = false;
+                document.getElementById('userId').disabled = true;
+                
+                // Iniciar actualización automática
+                actualizarMensajes();
+                intervalId = setInterval(actualizarMensajes, INTERVALO_ACTUALIZACION);
+                
+            } catch (error) {
+                console.error('Error al iniciar chat:', error);
+                alert('Error al iniciar el chat');
+            }
+        }
+
+        async function actualizarMensajes() {
+            if (!chatId) return;
+
+            try {
+                const response = await fetch(`http://localhost:3001/chat/${chatId}/messages`);
+                const mensajes = await response.json();
+                mostrarHistorial(mensajes);
+            } catch (error) {
+                console.error('Error al cargar mensajes:', error);
+            }
+        }
+
+        async function enviarMensaje() {
+            const mensajeInput = document.getElementById('mensaje');
+            const mensaje = mensajeInput.value.trim();
+            
+            if (!mensaje || !chatId) return;
+
+            try {
+                await fetch(`http://localhost:3001/chat/${chatId}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        sender_id: userId,
+                        message: mensaje
+                    })
+                });
+
+                mensajeInput.value = '';
+                actualizarMensajes(); // Actualizar inmediatamente después de enviar
+            } catch (error) {
+                console.error('Error al enviar mensaje:', error);
+                alert('Error al enviar el mensaje');
+            }
+        }
+
+        function nuevoChat() {
+            if (intervalId) clearInterval(intervalId);
+            chatId = null;
+            document.getElementById('mensaje').disabled = false;
+            document.getElementById('btnEnviar').disabled = false;
+            document.getElementById('userId').disabled = false;
+        }
+        function mostrarHistorial(mensajes) {
+            const mensajesDiv = document.getElementById('mensajes');
+            mensajesDiv.innerHTML = '';
+            mensajes.forEach(mostrarMensaje);
+        }
+
+        function mostrarMensaje(mensaje) {
+            const mensajesDiv = document.getElementById('mensajes');
+            const esPropio = mensaje.sender_id.toString() === userId;
+            
+            const div = document.createElement('div');
+            div.className = `message ${esPropio ? 'sent' : 'received'}`;
+            div.innerHTML = `
+                <div>${mensaje.message}</div>
+                <div class="timestamp">
+                    ${mensaje.sender_name || 'Usuario'} - ${new Date(mensaje.created_at).toLocaleTimeString()}
+                </div>
+            `;
+            
+            mensajesDiv.appendChild(div);
+            mensajesDiv.scrollTop = mensajesDiv.scrollHeight;
+        }
+
+        // Evento para enviar con Enter
+        document.getElementById('mensaje').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') enviarMensaje();
+        });
+
+        // Limpiar intervalo al cerrar la página
+        window.onbeforeunload = () => {
+            if (intervalId) clearInterval(intervalId);
+        };
+    </script>
+</body>
+</html>
