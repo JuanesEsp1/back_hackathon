@@ -56,8 +56,17 @@ CREATE TABLE chat_messages (
 ALTER TABLE support_chats
 ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
 
--- Crear índices para mejorar el rendimiento
+ALTER TABLE support_chats
+ADD COLUMN last_read TIMESTAMP NULL,
+ADD COLUMN last_activity TIMESTAMP NULL,
+ADD COLUMN assigned_at TIMESTAMP NULL,
+ADD COLUMN priority ENUM('low', 'medium', 'high') DEFAULT 'medium';
+
 CREATE INDEX idx_support_chats_status ON support_chats(status);
+CREATE INDEX idx_support_chats_priority ON support_chats(priority);
+CREATE INDEX idx_chat_messages_created ON chat_messages(created_at);
+
+-- Crear índices para mejorar el rendimiento
 CREATE INDEX idx_support_chats_support_id ON support_chats(support_id);
 CREATE INDEX idx_chat_messages_chat_id ON chat_messages(chat_id);
 

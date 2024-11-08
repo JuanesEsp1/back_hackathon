@@ -307,6 +307,163 @@ app.get("/chats", async (req, res) => {
     }
 });
 
+// 1. Marcar chat como leído
+app.patch("/chat/:chatId/read", async (req, res) => {
+    const { chatId } = req.params;
+    const { support_id } = req.body;
+    try {
+        const query = `
+            UPDATE support_chats 
+            SET last_read = NOW() 
+            WHERE id = ? AND support_id = ?
+        `;
+        connection.query(query, [chatId, support_id], (err, result) => {
+            if (err) throw err;
+            res.json({ success: true });
+        });
+    } catch (error) {
+        console.error("Error al marcar chat como leído:", error);
+        res.status(500).json({ message: "Error al actualizar el estado de lectura" });
+    }
+});
+
+// 2. Obtener mensajes no leídos
+app.get("/chat/:chatId/unread", async (req, res) => {
+    const { chatId } = req.params;
+    try {
+        const query = `
+            SELECT COUNT(*) as unread_count
+            FROM chat_messages
+            WHERE chat_id = ? 
+            AND created_at > (
+                SELECT COALESCE(last_read, created_at)
+                FROM support_chats
+                WHERE id = ?
+            )
+        `;
+        connection.query(query, [chatId, chatId], (err, results) => {
+            if (err) throw err;
+            res.json({ unreadCount: results[0].unread_count });
+        });
+    } catch (error) {
+        console.error("Error al obtener mensajes no leídos:", error);
+        res.status(500).json({ message: "Error al obtener mensajes no leídos" });
+    }
+});
+
+// 3. Obtener último mensaje de cada chat
+app.get("/chats/last-messages", async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                sc.id as chat_id,
+                cm.message,
+                cm.created_at,
+                u.name as sender_name
+            FROM support_chats sc
+            LEFT JOIN (
+                SELECT chat_id, message, created_at, sender_id
+                FROM chat_messages cm1
+                WHERE created_at = (
+                    SELECT MAX(created_at)
+                    FROM chat_messages cm2
+                    WHERE cm2.chat_id = cm1.chat_id
+                )
+            ) cm ON sc.id = cm.chat_id
+            LEFT JOIN users u ON cm.sender_id = u.id
+            WHERE sc.status = 'open'
+        `;
+        connection.query(query, (err, results) => {
+            if (err) throw err;
+            res.json(results);
+        });
+    } catch (error) {
+        console.error("Error al obtener últimos mensajes:", error);
+        res.status(500).json({ message: "Error al obtener últimos mensajes" });
+    }
+});
+
+// 4. Obtener chats por prioridad
+app.get("/chats/priority/:priority", async (req, res) => {
+    const { priority } = req.params;
+    try {
+        const query = `
+            SELECT 
+                sc.*,
+                u.name as user_name,
+                su.name as support_name,
+                (
+                    SELECT COUNT(*)
+                    FROM chat_messages
+                    WHERE chat_id = sc.id
+                ) as message_count
+            FROM support_chats sc
+            JOIN users u ON sc.user_id = u.id
+            LEFT JOIN users su ON sc.support_id = su.id
+            WHERE sc.priority = ? AND sc.status = 'open'
+            ORDER BY sc.created_at DESC
+        `;
+        connection.query(query, [priority], (err, results) => {
+            if (err) throw err;
+            res.json(results);
+        });
+    } catch (error) {
+        console.error("Error al obtener chats por prioridad:", error);
+        res.status(500).json({ message: "Error al obtener chats" });
+    }
+});
+
+// 5. Actualizar el estado de actividad del chat
+app.patch("/chat/:chatId/activity", async (req, res) => {
+    const { chatId } = req.params;
+    try {
+        const query = `
+            UPDATE support_chats 
+            SET last_activity = NOW() 
+            WHERE id = ?
+        `;
+        connection.query(query, [chatId], (err, result) => {
+            if (err) throw err;
+            res.json({ success: true });
+        });
+    } catch (error) {
+        console.error("Error al actualizar actividad:", error);
+        res.status(500).json({ message: "Error al actualizar actividad" });
+    }
+});
+
+// 6. Mejorar el endpoint de asignación de agente
+app.patch("/chat/:id/assign", async (req, res) => {
+    const { id } = req.params;
+    const { support_id, support_name } = req.body;
+    try {
+        const query = `
+            UPDATE support_chats 
+            SET 
+                support_id = ?,
+                assigned_at = NOW(),
+                last_activity = NOW()
+            WHERE id = ? AND (support_id IS NULL OR support_id != ?)
+        `;
+        connection.query(query, [support_id, id, support_id], (err, result) => {
+            if (err) throw err;
+            if (result.affectedRows === 0) {
+                return res.status(400).json({ 
+                    message: "Chat ya está asignado a otro agente" 
+                });
+            }
+            res.json({ 
+                success: true, 
+                support_id, 
+                support_name 
+            });
+        });
+    } catch (error) {
+        console.error("Error al asignar agente:", error);
+        res.status(500).json({ message: "Error al asignar agente" });
+    }
+});
+
 // Obtener chats sin asignar
 app.get("/chats/unassigned", async (req, res) => {
     try {
