@@ -100,6 +100,20 @@ app.get("/pqr", async (req, res) => {
     }
 });
 
+app.get("/pqr/user", async (req, res) => {
+    const { user_id } = req.body;
+    try {
+        const result = "SELECT * FROM PQR WHERE user_id = ?";
+        connection.query(result, [user_id], (err, results) => {
+            if (err) throw err;
+            res.json(results);
+        });
+    } catch (error) {
+        console.error("Error ejecutando la consulta", error.stack);
+        res.status(500).send("Error en el servidor");
+    }
+})
+
 app.post("/pqr", async (req, res) => {
     const { user_id, support_id, type, description, support_document, support_response, status } = req.body;
     try {
