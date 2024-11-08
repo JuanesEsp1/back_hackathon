@@ -3,7 +3,7 @@ const app = express();
 const cors = require("cors");
 const port = 3001;
 const connection = require("./controller/db.js");
-const facturaController = require("./controller/facturaController.js");
+const createInvoice = require("./controller/invoiceController.js");
 app.use(express.urlencoded({ extended: true }));
 require("dotenv").config();
 app.use(express.json());
@@ -11,13 +11,13 @@ app.use(cors());
 
 
 // Servir archivo de prueba
-app.get('/cliente', (req, res) => {
-    res.sendFile(__dirname + '/cliente.html');
-});
+// app.get('/cliente', (req, res) => {
+//     res.sendFile(__dirname + '/cliente.html');
+// });
 
-app.get('/soporte', (req, res) => {
-    res.sendFile(__dirname + '/soporte.html');
-});
+// app.get('/soporte', (req, res) => {
+//     res.sendFile(__dirname + '/soporte.html');
+// });
 
 // ############## ENDPOINTS USUARIOS ##############
 app.get("/usuarios", async (req, res) => {
@@ -659,7 +659,20 @@ app.get("/support/:support_id/stats", async (req, res) => {
 });
 
 
-app.post("/factura", facturaController.generarFactura);
+app.post("/factura", createInvoice);
+
+app.get("/factura", async (req, res) => {
+    try {
+        const query = "SELECT * FROM facturas"; 
+        connection.query(query, (err, results) => {
+            if (err) throw err;
+            res.json(results);
+        });
+    } catch (err) {
+        console.error("Error ejecutando la consulta", err.stack);
+        res.status(500).send("Error en el servidor");
+    }
+});
 
 app.listen(port, () => {
     console.log("esta corriendo en el puerto: ", port);
