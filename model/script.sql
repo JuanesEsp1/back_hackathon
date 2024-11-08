@@ -71,6 +71,40 @@ CREATE INDEX idx_support_chats_support_id ON support_chats(support_id);
 CREATE INDEX idx_chat_messages_chat_id ON chat_messages(chat_id);
 
 
+-- Crear facturaas
+
+CREATE TABLE facturas (
+    id SERIAL PRIMARY KEY,
+    numero_factura VARCHAR(50) NOT NULL UNIQUE,
+    fecha_emision TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    cliente_id INTEGER REFERENCES clientes(id),
+    subtotal DECIMAL(10,2) NOT NULL,
+    impuestos DECIMAL(10,2) NOT NULL,
+    total DECIMAL(10,2) NOT NULL,
+    pdf_url VARCHAR(255) NOT NULL,
+    qr_url VARCHAR(255),
+    estado VARCHAR(20) DEFAULT 'EMITIDA',
+    notas TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE factura_items (
+    id SERIAL PRIMARY KEY,
+    factura_id INTEGER REFERENCES facturas(id),
+    producto_id INTEGER REFERENCES productos(id),
+    descripcion VARCHAR(255) NOT NULL,
+    cantidad INTEGER NOT NULL,
+    precio_unitario DECIMAL(10,2) NOT NULL,
+    subtotal DECIMAL(10,2) NOT NULL,
+    impuesto DECIMAL(10,2) NOT NULL,
+    total DECIMAL(10,2) NOT NULL
+);
+
+-- Índices para mejor rendimiento
+CREATE INDEX idx_facturas_cliente ON facturas(cliente_id);
+CREATE INDEX idx_facturas_numero ON facturas(numero_factura);
+CREATE INDEX idx_factura_items_factura ON factura_items(factura_id);
 
 
 -- FUNCIONAMIENTO BASICO DEL CHAT CON SQL
