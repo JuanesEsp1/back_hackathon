@@ -373,7 +373,7 @@ app.get("/support/:support_id/stats", async (req, res) => {
 });
 
 
-// app.post("/factura", facturaController.generarFactura);
+app.post("/factura", facturaController.generarFactura);
 
 app.listen(port, () => {
     console.log("esta corriendo en el puerto: ", port);
