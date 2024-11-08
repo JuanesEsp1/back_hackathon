@@ -674,6 +674,35 @@ app.get("/factura", async (req, res) => {
     }
 });
 
+app.get("/factura/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+        const query = `
+            SELECT f.*, u.name as cliente_nombre 
+            FROM facturas f
+            JOIN users u ON f.cliente_id = u.id
+            WHERE f.cliente_id = ?
+        `;
+        connection.query(query, [id], (err, results) => {
+            if (err) {
+                console.error("Error en la consulta:", err);
+                return res.status(500).json({ error: "Error al obtener las facturas" });
+            }
+
+            if (results.length === 0) {
+                return res.status(404).json({ message: "No se encontraron facturas para este cliente" });
+            }
+
+            res.json(results); // Devolvemos todas las facturas del cliente
+        });
+    } catch (error) {
+        console.error("Error ejecutando la consulta", error);
+        res.status(500).json({ error: "Error en el servidor" });
+    }
+});
+
+
+
 app.listen(port, () => {
     console.log("esta corriendo en el puerto: ", port);
 });
