@@ -54,7 +54,6 @@ CREATE TABLE chat_messages (
 
 -- Actualizar la tabla de support_chats
 ALTER TABLE support_chats
-ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
 
 -- Crear índices para mejorar el rendimiento
