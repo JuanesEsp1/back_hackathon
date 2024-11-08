@@ -1,326 +1,179 @@
-const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
-const xml2js = require('xml2js');
-const QRCode = require('qrcode');
+const { generarPDF } = require("../services/pdfGenerator");
+const { generarXMLUBL } = require("../services/generarXmlConfig");
+const fs = require('fs');
 
-class FacturaController {
-    async generarFactura(req, res) {
+// Controlador para generar factura
+async function generarFactura(req, res) {
+  try {
+    // Generación del XML
+    const xmlString = await generarXMLUBL(req);
+    fs.writeFileSync(`factura_${req.body.numeroFactura}.xml`, xmlString);
+
+    // Generación del PDF
+    await generarPDF(req, res);
+
+    res.send({ message: "Factura generada exitosamente." });
+  } catch (error) {
+    console.error("Error al generar factura:", error);
+    res.status(500).send({ error: "Error al generar la factura" });const { generarPDF } = require("../services/pdfGenerator");
+    const { generarXMLUBL } = require("../services/generarXmlConfig");
+    const uploadFile = require("../services/uploadPDF");
+    const QRCode = require('qrcode');
+    const db = require("../controller/db");
+    
+    async function generarFactura(req, res) {
         try {
-            // Validación básica de la estructura
-            if (!Array.isArray(req.body.items)) {
-                throw new Error('Los items deben ser un array de productos');
+            const { numeroFactura, fecha, cliente, items, total, impuestos, notas } = req.body;
+    
+            // Validaciones básicas
+            if (!numeroFactura || !cliente || !Array.isArray(items) || items.length === 0) {
+                return res.status(400).json({
+                    error: "Datos incompletos",
+                    mensaje: "Se requieren todos los campos obligatorios"
+                });
             }
-
-            const {
+    
+            // 1. Generar XML
+            const xmlString = await generarXMLUBL(req);
+    
+            // 2. Generar QR con el XML
+            const qrBuffer = await QRCode.toBuffer(xmlString);
+            
+            // 3. Subir QR a Cloudinary
+            const qrResult = await uploadFile(
+                qrBuffer,
+                'facturas/qr',
+                `qr-${numeroFactura}.png`
+            );
+    
+            // 4. Generar PDF
+            const pdfBuffer = await generarPDF({
                 numeroFactura,
                 fecha,
                 cliente,
                 items,
                 total,
-                impuestos
-            } = req.body;
-
-            // Convertir strings a números si es necesario
-            const totalNumerico = parseFloat(total);
-            const impuestosNumericos = parseFloat(impuestos);
-
-            if (isNaN(totalNumerico) || isNaN(impuestosNumericos)) {
-                throw new Error('El total y los impuestos deben ser valores numéricos');
+                impuestos,
+                notas,
+                qrUrl: qrResult.secure_url
+            });
+    
+            // 5. Subir PDF a Cloudinary
+            const pdfResult = await uploadFile(
+                pdfBuffer,
+                'facturas/pdf',
+                `factura-${numeroFactura}.pdf`
+            );
+    
+            // 6. Guardar en base de datos
+            const facturaDB = await db.query(
+                `INSERT INTO facturas (
+                    numero_factura, fecha_emision, cliente_id,
+                    subtotal, impuestos, total, pdf_url, qr_url,
+                    notas, estado
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    numeroFactura,
+                    fecha,
+                    cliente.id,
+                    total,
+                    impuestos,
+                    parseFloat(total) + parseFloat(impuestos),
+                    pdfResult.secure_url,
+                    qrResult.secure_url,
+                    notas,
+                    'EMITIDA'
+                ]
+            );
+    
+            // 7. Guardar items en la base de datos
+            for (const item of items) {
+                await db.query(
+                    `INSERT INTO factura_items (
+                        factura_id, producto_id, descripcion,
+                        cantidad, precio_unitario, subtotal,
+                        impuesto, total
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        facturaDB.insertId,
+                        item.producto_id,
+                        item.descripcion,
+                        item.cantidad,
+                        item.precioUnitario,
+                        item.precio,
+                        item.impuesto || 0,
+                        item.precio
+                    ]
+                );
             }
-
-            // 1. Generar XML (requerido por muchas autoridades fiscales)
-            const xmlFactura = {
-                Factura: {
-                    $: {
-                        version: '1.0',
-                        numeroFactura: numeroFactura
-                    },
-                    Encabezado: {
-                        Fecha: fecha,
-                        Cliente: cliente
-                    },
-                    Items: {
-                        Item: items
-                    },
-                    Totales: {
-                        Total: total,
-                        Impuestos: impuestos
-                    }
+    
+            // 8. Responder con éxito
+            res.json({
+                mensaje: "Factura generada exitosamente",
+                factura: {
+                    id: facturaDB.insertId,
+                    numero: numeroFactura,
+                    pdf_url: pdfResult.secure_url,
+                    qr_url: qrResult.secure_url
                 }
-            };
-
-            // Convertir a string XML
-            const builder = new xml2js.Builder();
-            const xmlString = builder.buildObject(xmlFactura);
-
-            // 2. Generar PDF
-            const pdfDoc = await PDFDocument.create();
-            const page = pdfDoc.addPage([595.28, 841.89]); // Tamaño A4
-            const { width, height } = page.getSize();
-            
-            // Configuración de fuentes
-            const helvetica = await pdfDoc.embedFont(StandardFonts.Helvetica);
-            const helveticaBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-            const fontSize = 10;
-            const titleSize = 16;
-            const subtitleSize = 12;
-            
-            let yPosition = height - 50;
-            
-            // Título principal centrado
-            const titleText = `FACTURA ELECTRÓNICA`;
-            const titleWidth = helveticaBold.widthOfTextAtSize(titleText, titleSize);
-            page.drawText(titleText, {
-                x: (width - titleWidth) / 2,
-                y: yPosition,
-                size: titleSize,
-                font: helveticaBold,
-                color: rgb(0, 0, 0)
             });
-
-            // Número de factura centrado
-            yPosition -= 25;
-            const numeroText = `N° ${numeroFactura}`;
-            const numeroWidth = helveticaBold.widthOfTextAtSize(numeroText, subtitleSize);
-            page.drawText(numeroText, {
-                x: (width - numeroWidth) / 2,
-                y: yPosition,
-                size: subtitleSize,
-                font: helveticaBold,
-                color: rgb(0, 0, 0)
-            });
-
-            // Línea separadora
-            yPosition -= 20;
-            page.drawLine({
-                start: { x: 50, y: yPosition },
-                end: { x: width - 50, y: yPosition },
-                thickness: 1,
-                color: rgb(0.7, 0.7, 0.7),
-            });
-
-            // Información de la empresa (ejemplo)
-            yPosition -= 25;
-            page.drawText('EMPRESA EJEMPLO S.A.', {
-                x: 50,
-                y: yPosition,
-                size: subtitleSize,
-                font: helveticaBold,
-                color: rgb(0, 0, 0)
-            });
-
-            yPosition -= 15;
-            page.drawText('NIT: 900.XXX.XXX-X', {
-                x: 50,
-                y: yPosition,
-                size: fontSize,
-                font: helvetica,
-                color: rgb(0, 0, 0)
-            });
-
-            yPosition -= 15;
-            page.drawText('Dirección: Calle Principal #123', {
-                x: 50,
-                y: yPosition,
-                size: fontSize,
-                font: helvetica,
-                color: rgb(0, 0, 0)
-            });
-
-            // Información del cliente y fecha en dos columnas
-            yPosition -= 40;
-            // Columna izquierda - Cliente
-            page.drawText('INFORMACIÓN DEL CLIENTE', {
-                x: 50,
-                y: yPosition,
-                size: subtitleSize,
-                font: helveticaBold,
-                color: rgb(0, 0, 0)
-            });
-
-            // Columna derecha - Fecha
-            page.drawText('FECHA DE EMISIÓN', {
-                x: width - 200,
-                y: yPosition,
-                size: subtitleSize,
-                font: helveticaBold,
-                color: rgb(0, 0, 0)
-            });
-
-            yPosition -= 20;
-            page.drawText(`Cliente: ${typeof cliente === 'object' ? cliente.nombre : cliente}`, {
-                x: 50,
-                y: yPosition,
-                size: fontSize,
-                font: helvetica,
-                color: rgb(0, 0, 0)
-            });
-
-            page.drawText(`${fecha}`, {
-                x: width - 200,
-                y: yPosition,
-                size: fontSize,
-                font: helvetica,
-                color: rgb(0, 0, 0)
-            });
-
-            // Tabla de items
-            yPosition -= 40;
-            // Encabezados de la tabla
-            const tableHeaders = ['Descripción', 'Cantidad', 'Precio Unit.', 'Total'];
-            const columnWidths = [250, 80, 100, 100];
-            let xPosition = 50;
-
-            tableHeaders.forEach((header, index) => {
-                page.drawText(header, {
-                    x: xPosition,
-                    y: yPosition,
-                    size: fontSize,
-                    font: helveticaBold,
-                    color: rgb(0, 0, 0)
-                });
-                xPosition += columnWidths[index];
-            });
-
-            // Línea bajo los encabezados
-            yPosition -= 5;
-            page.drawLine({
-                start: { x: 50, y: yPosition },
-                end: { x: width - 50, y: yPosition },
-                thickness: 1,
-                color: rgb(0, 0, 0),
-            });
-
-            // Items
-            yPosition -= 20;
-            if (Array.isArray(items)) {
-                items.forEach(item => {
-                    xPosition = 50;
-                    page.drawText(item.descripcion, {
-                        x: xPosition,
-                        y: yPosition,
-                        size: fontSize,
-                        font: helvetica,
-                        color: rgb(0, 0, 0)
-                    });
-                    
-                    xPosition += columnWidths[0];
-                    page.drawText(item.cantidad.toString(), {
-                        x: xPosition,
-                        y: yPosition,
-                        size: fontSize,
-                        font: helvetica,
-                        color: rgb(0, 0, 0)
-                    });
-                    
-                    xPosition += columnWidths[1];
-                    page.drawText(`$${item.precioUnitario}`, {
-                        x: xPosition,
-                        y: yPosition,
-                        size: fontSize,
-                        font: helvetica,
-                        color: rgb(0, 0, 0)
-                    });
-                    
-                    xPosition += columnWidths[2];
-                    page.drawText(`$${item.precio}`, {
-                        x: xPosition,
-                        y: yPosition,
-                        size: fontSize,
-                        font: helvetica,
-                        color: rgb(0, 0, 0)
-                    });
-                    
-                    yPosition -= 20;
-                });
-            } else {
-                page.drawText(items, {
-                    x: 50,
-                    y: yPosition,
-                    size: fontSize,
-                    font: helvetica,
-                    color: rgb(0, 0, 0)
-                });
-                yPosition -= 20;
-            }
-
-            // Totales alineados a la derecha
-            yPosition -= 20;
-            const totalesX = width - 200;
-            
-            page.drawText('Subtotal:', {
-                x: totalesX,
-                y: yPosition,
-                size: fontSize,
-                font: helveticaBold,
-                color: rgb(0, 0, 0)
-            });
-            
-            page.drawText(`$${total}`, {
-                x: totalesX + 100,
-                y: yPosition,
-                size: fontSize,
-                font: helvetica,
-                color: rgb(0, 0, 0)
-            });
-
-            yPosition -= 20;
-            page.drawText('Impuestos:', {
-                x: totalesX,
-                y: yPosition,
-                size: fontSize,
-                font: helveticaBold,
-                color: rgb(0, 0, 0)
-            });
-            
-            page.drawText(`$${impuestos}`, {
-                x: totalesX + 100,
-                y: yPosition,
-                size: fontSize,
-                font: helvetica,
-                color: rgb(0, 0, 0)
-            });
-
-            yPosition -= 20;
-            page.drawLine({
-                start: { x: totalesX, y: yPosition + 15 },
-                end: { x: width - 50, y: yPosition + 15 },
-                thickness: 1,
-                color: rgb(0, 0, 0),
-            });
-
-            page.drawText('TOTAL:', {
-                x: totalesX,
-                y: yPosition,
-                size: subtitleSize,
-                font: helveticaBold,
-                color: rgb(0, 0, 0)
-            });
-            
-            page.drawText(`$${parseFloat(total) + parseFloat(impuestos)}`, {
-                x: totalesX + 100,
-                y: yPosition,
-                size: subtitleSize,
-                font: helveticaBold,
-                color: rgb(0, 0, 0)
-            });
-
-            // 3. Generar código QR (muchos países lo requieren)
-            const qrCode = await QRCode.toDataURL(xmlString);
-
-            // 4. Guardar documentos
-            const pdfBytes = await pdfDoc.save();
-
-            // 5. Enviar respuesta
-            res.setHeader('Content-Type', 'application/pdf');
-            res.send(Buffer.from(pdfBytes));
-
+    
         } catch (error) {
+            console.error("Error al generar factura:", error);
             res.status(500).json({
-                error: 'Error al generar la factura',
+                error: "Error al generar la factura",
                 detalles: error.message
             });
         }
     }
+    
+    // Método para obtener una factura
+    async function obtenerFactura(req, res) {
+        try {
+            const { id } = req.params;
+            
+            const [factura] = await db.query(
+                `SELECT f.*, 
+                        c.nombre as cliente_nombre,
+                        c.documento as cliente_documento
+                 FROM facturas f
+                 LEFT JOIN clientes c ON f.cliente_id = c.id
+                 WHERE f.id = ?`,
+                [id]
+            );
+    
+            if (!factura) {
+                return res.status(404).json({
+                    error: "Factura no encontrada"
+                });
+            }
+    
+            const items = await db.query(
+                `SELECT * FROM factura_items WHERE factura_id = ?`,
+                [id]
+            );
+    
+            res.json({
+                factura: {
+                    ...factura,
+                    items
+                }
+            });
+    
+        } catch (error) {
+            console.error("Error al obtener factura:", error);
+            res.status(500).json({
+                error: "Error al obtener la factura",
+                detalles: error.message
+            });
+        }
+    }
+    
+    module.exports = {
+        generarFactura,
+        obtenerFactura
+    };
+  }
 }
 
-module.exports = new FacturaController();
+module.exports = { generarFactura };

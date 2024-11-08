@@ -5,6 +5,7 @@ const port = 3001;
 const connection = require("./controller/db.js");
 const facturaController = require("./controller/facturaController.js");
 app.use(express.urlencoded({ extended: true }));
+require("dotenv").config();
 app.use(express.json());
 app.use(cors());
 
@@ -170,22 +171,6 @@ app.post("/chat", async (req, res) => {
     }
 });
 
-
-// Asignar agente de soporte al chat
-app.patch("/chat/:id/assign", async (req, res) => {
-    const { id } = req.params;
-    const { support_id } = req.body;
-    try {
-        const query = "UPDATE support_chats SET support_id = ? WHERE id = ?";
-        connection.query(query, [support_id, id], (err, result) => {
-            if (err) throw err;
-            res.json(result);
-        });
-    } catch (error) {
-        console.error("Error ejecutando la consulta", error.stack);
-        res.status(500).send("Error en el servidor");
-    }
-});
 
 // Enviar mensaje
 app.post("/chat/:chat_id/messages", async (req, res) => {
@@ -435,32 +420,86 @@ app.patch("/chat/:chatId/activity", async (req, res) => {
 // 6. Mejorar el endpoint de asignación de agente
 app.patch("/chat/:id/assign", async (req, res) => {
     const { id } = req.params;
-    const { support_id, support_name } = req.body;
+    const { support_id } = req.body;
+
+    if (!id || !support_id) {
+        return res.status(400).json({ 
+            message: "Se requiere ID del chat y ID del agente" 
+        });
+    }
+
     try {
-        const query = `
-            UPDATE support_chats 
-            SET 
-                support_id = ?,
-                assigned_at = NOW(),
-                last_activity = NOW()
-            WHERE id = ? AND (support_id IS NULL OR support_id != ?)
+        // Primero verificamos si el chat existe y su estado actual
+        const checkQuery = `
+            SELECT status, support_id 
+            FROM support_chats 
+            WHERE id = ?
         `;
-        connection.query(query, [support_id, id, support_id], (err, result) => {
-            if (err) throw err;
-            if (result.affectedRows === 0) {
-                return res.status(400).json({ 
-                    message: "Chat ya está asignado a otro agente" 
+
+        connection.query(checkQuery, [id], (checkErr, checkResults) => {
+            if (checkErr) throw checkErr;
+
+            if (checkResults.length === 0) {
+                return res.status(404).json({ 
+                    message: "Chat no encontrado" 
                 });
             }
-            res.json({ 
-                success: true, 
-                support_id, 
-                support_name 
+
+            const chat = checkResults[0];
+
+            if (chat.status !== 'open') {
+                return res.status(400).json({ 
+                    message: "Solo se pueden asignar chats abiertos" 
+                });
+            }
+
+            // Realizamos la asignación
+            const updateQuery = `
+                UPDATE support_chats 
+                SET 
+                    support_id = ?,
+                    assigned_at = NOW(),
+                    last_activity = NOW()
+                WHERE id = ? AND status = 'open'
+            `;
+
+            connection.query(updateQuery, [support_id, id], (updateErr, updateResult) => {
+                if (updateErr) throw updateErr;
+
+                if (updateResult.affectedRows === 0) {
+                    return res.status(400).json({ 
+                        message: "No se pudo asignar el chat" 
+                    });
+                }
+
+                // Obtenemos los datos actualizados del chat
+                const getUpdatedQuery = `
+                    SELECT 
+                        sc.*,
+                        u.name as support_name
+                    FROM support_chats sc
+                    LEFT JOIN users u ON sc.support_id = u.id
+                    WHERE sc.id = ?
+                `;
+
+                connection.query(getUpdatedQuery, [id], (getErr, getResults) => {
+                    if (getErr) throw getErr;
+
+                    res.json({
+                        success: true,
+                        message: "Chat asignado correctamente",
+                        chat: getResults[0]
+                    });
+                });
             });
         });
     } catch (error) {
         console.error("Error al asignar agente:", error);
-        res.status(500).json({ message: "Error al asignar agente" });
+        res.status(500).json({ 
+            success: false,
+            message: "Error al asignar agente",
+            error: error.message 
+        });
     }
 });
 
