@@ -100,6 +100,7 @@ app.get("/pqr", async (req, res) => {
     }
 });
 
+
 app.get("/pqr/user", async (req, res) => {
     const { user_id } = req.body;
     try {
@@ -186,22 +187,53 @@ app.post("/chat", async (req, res) => {
 });
 
 
-// Enviar mensaje
 app.post("/chat/:chat_id/messages", async (req, res) => {
     const { chat_id } = req.params;
     const { sender_id, message } = req.body;
+
+    // Validaciones
+    if (!chat_id || !sender_id || !message) {
+        console.log('Datos recibidos:', { chat_id, sender_id, message });
+        return res.status(400).json({
+            error: "Datos incompletos",
+            message: "chat_id, sender_id y message son requeridos"
+        });
+    }
+
     try {
-        const query = "INSERT INTO chat_messages (chat_id, sender_id, message) VALUES (?, ?, ?)";
+        const query = `
+            INSERT INTO chat_messages 
+            (chat_id, sender_id, message, created_at) 
+            VALUES (?, ?, ?, NOW())
+        `;
+        
         connection.query(query, [chat_id, sender_id, message], (err, result) => {
-            if (err) throw err;
-            res.json(result);
+            if (err) {
+                console.error("Error en la consulta:", err);
+                return res.status(500).json({
+                    error: "Error en el servidor",
+                    message: err.message
+                });
+            }
+            
+            const newMessage = {
+                id: result.insertId,
+                chat_id,
+                sender_id,
+                message,
+                created_at: new Date(),
+            };
+            
+            res.json(newMessage);
         });
     } catch (error) {
-        console.error("Error ejecutando la consulta", error.stack);
-        res.status(500).send("Error en el servidor");
+        console.error("Error ejecutando la consulta", error);
+        res.status(500).json({
+            error: "Error en el servidor",
+            message: error.message
+        });
     }
 });
-
 // Obtener mensajes de un chat específico
 app.get("/chat/:chat_id/messages", async (req, res) => {
     const { chat_id } = req.params;
