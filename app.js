@@ -113,9 +113,8 @@ app.post("/pqr", async (req, res) => {
     }
 });
 
-app.patch("/pqr/:id", async (req, res) => {
-    const { id } = req.params;
-    const { status, support_response, support_id, support_name } = req.body;
+app.patch("/pqr", async (req, res) => {
+    const { id, status, support_response, support_id, support_name } = req.body;
     try {
         const query = "UPDATE PQR SET status = ?, support_response = ?, support_id = ?, support_name = ? WHERE id = ?";
         connection.query(query, [status, support_response, support_id, support_name, id], (err, result) => {
