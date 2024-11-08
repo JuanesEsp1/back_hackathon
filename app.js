@@ -132,19 +132,45 @@ app.patch("/pqr/:id", async (req, res) => {
 // ############## ENDPOINTS CHAT SOPORT ##############
 
 // Crear nuevo chat
+// Crear o reutilizar chat existente
 app.post("/chat", async (req, res) => {
     const { user_id } = req.body;
     try {
-        const query = "INSERT INTO support_chats (user_id, support_id, status) VALUES (?, NULL, 'open')";
-        connection.query(query, [user_id], (err, result) => {
-            if (err) throw err;
-            res.json(result);
+        // Verificar si ya existe un chat abierto para este usuario
+        const checkQuery = "SELECT * FROM support_chats WHERE user_id = ? AND status = 'open'";
+        connection.query(checkQuery, [user_id], (err, results) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).send("Error en el servidor");
+            }
+
+            if (results.length > 0) {
+                // Si ya existe un chat abierto, devolverlo
+                res.json(results[0]);
+            } else {
+                // Si no existe, crear un nuevo chat
+                const insertQuery = "INSERT INTO support_chats (user_id, support_id, status) VALUES (?, NULL, 'open')";
+                connection.query(insertQuery, [user_id], (err, result) => {
+                    if (err) {
+                        console.error(err);
+                        return res.status(500).send("Error en el servidor");
+                    }
+                    // Devolver el nuevo chat creado
+                    res.json({
+                        id: result.insertId,
+                        user_id: user_id,
+                        support_id: null,
+                        status: 'open',
+                    });
+                });
+            }
         });
     } catch (error) {
         console.error("Error ejecutando la consulta", error.stack);
         res.status(500).send("Error en el servidor");
     }
 });
+
 
 // Asignar agente de soporte al chat
 app.patch("/chat/:id/assign", async (req, res) => {
@@ -192,6 +218,26 @@ app.get("/chat/:chat_id/messages", async (req, res) => {
         connection.query(query, [chat_id], (err, results) => {
             if (err) throw err;
             res.json(results);
+        });
+    } catch (error) {
+        console.error("Error ejecutando la consulta", error.stack);
+        res.status(500).send("Error en el servidor");
+    }
+});
+
+// Obtener chat activo de un usuario
+app.get("/chat/user/:user_id/active", async (req, res) => {
+    const { user_id } = req.params;
+    try {
+        const query = `
+            SELECT * FROM support_chats 
+            WHERE user_id = ? AND status = 'open' 
+            ORDER BY created_at DESC 
+            LIMIT 1
+        `;
+        connection.query(query, [user_id], (err, results) => {
+            if (err) throw err;
+            res.json(results[0] || null);
         });
     } catch (error) {
         console.error("Error ejecutando la consulta", error.stack);

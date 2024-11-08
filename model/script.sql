@@ -11,13 +11,14 @@ CREATE TABLE users (
 
 CREATE TABLE PQR (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    user_id INT NOT NULL,
-    support_id INT NOT NULL,
-    type VARCHAR(255) NOT NULL,
-    description VARCHAR(255) NOT NULL,
+    user_id INT ,
+    support_id INT ,
+    support_name VARCHAR(255) ,
+    type VARCHAR(255) ,
+    description TEXT,
     support_document VARCHAR(255),
     support_response VARCHAR(255),
-    status VARCHAR(255) NOT NULL
+    status VARCHAR(255) 
 );
 
 -- Tabla de tickets de soporte
