@@ -100,14 +100,8 @@ app.get("/pqr", async (req, res) => {
     }
 });
 
-<<<<<<< HEAD
-
-app.get("/pqr/user", async (req, res) => {
-    const { user_id } = req.body;
-=======
 app.get("/pqr/user/:user_id", async (req, res) => {
     const { user_id } = req.params;
->>>>>>> 8cabf00c94106c09d810f29e59b63a108ad1f755
     try {
         const result = "SELECT * FROM PQR WHERE user_id = ?";
         connection.query(result, [user_id], (err, results) => {
